@@ -2,7 +2,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const Web3 = require('web3');
-require('dotenv').config({path: '.env'});
+require('dotenv').config({path: 'config.ini'});
 const { ethers } = require("ethers");
 
 // prevent app crashing because of some internal exception
@@ -53,10 +53,10 @@ async function processTransactions(networkId, blockNumber, transactions, apiEndp
 
 // daly of 1 second for each contract fetch
 async function delay(){
-    new Promise(resolve => setTimeout(resolve, 100));
+    new Promise(resolve => setTimeout(resolve, process.env.API_QUERY_DELAY));
 }
 
-// implementation of contract code fetch for *scan block explorers
+// implementation of contract code fetch for etherscan block explorers
 async function etherscan(networkId, apiEndpoint, contractAddress, apiKey){
     const urlEndpoint = `https://${apiEndpoint}/api?module=contract&action=getsourcecode&address=${contractAddress}&apikey=${apiKey}`;
     const contractApiResponse = await axios.get(urlEndpoint);
@@ -73,6 +73,7 @@ async function etherscan(networkId, apiEndpoint, contractAddress, apiKey){
     await delay();
 }
 
+// implementation of contract code fetch for blockscout block explorers
 async function blockscout(networkId, apiEndpoint, contractAddress, apiKey){
     const urlEndpoint = `https://${apiEndpoint}/api?module=contract&action=getsourcecode&address=${contractAddress}`;
     const contractApiResponse = await axios.get(urlEndpoint);
@@ -93,31 +94,44 @@ async function blockscout(networkId, apiEndpoint, contractAddress, apiKey){
 // for now, it just save in the file system
 async function saveContractData(networkId, contractAddress, contractName, source, abi ){
     const prefix = contractAddress.substring(0, 3);
-    const dirName = `./data/${networkId}/${prefix}/${contractAddress}`;
+    const dirName = `${DATA_DIR}/${networkId}/${prefix}/${contractAddress}`;
     yellow(dirName, contractName);
     fs.mkdirSync(dirName, {recursive: true});
     fs.writeFileSync(`${dirName}/${contractName}.sol`, source);
-    fs.writeFileSync(`${dirName}/${contractName}.abi`, abi);
+    fs.writeFileSync(`${dirName}/${contractName}.js`, abi);
 }
 
 // main runner, can run in parallel various scanners
 async function main() {
-    const ethereumRpc = `https://mainnet.infura.io/v3/${process.env.INFURA_API_KEY}`
-    const bscRpc = `https://speedy-nodes-nyc.moralis.io/${process.env.MORALIS_API_KEY}/bsc/mainnet/archive`
+    /*
+    for bsc there is a bug, workaround is here
+    https://github.com/ChainSafe/web3.js/issues/3912#issuecomment-1004045262
+    */
 
-    // extract(1, ethereumRpc, 14307006, 'https://api.etherscan.io',
-    //     etherscan, process.env.API_ETHERSCAN);
+
+    if( process.env.TYPE == 'etherscan')
+        extract(process.env.NETWORK_ID,
+            process.env.RPC,
+            process.env.START_BLOCK,
+            process.env.EXPLORER,
+            etherscan,
+            process.env.API_KEY);
+    else if( process.env.TYPE == 'etherscan')
+        extract(process.env.NETWORK_ID,
+            process.env.RPC,
+            process.env.START_BLOCK,
+            process.env.EXPLORER,
+            blockscout,
+            process.env.API_KEY);
+    else{
+        red(`${process.env.TYPE} NOT IMPLEMENTED.`);
+        process.exit(1)
+    }
 
 
-    // for bsc there is a bug, workaround is here https://github.com/ChainSafe/web3.js/issues/3912#issuecomment-1004045262
-    // extract(56, bscRpc, 15710947, 'api.bscscan.com',
-    //     etherscan, process.env.API_BSCSCAN);
-
-    extract(25, 'https://evm-cronos.crypto.org',
-        5260, 'cronos.crypto.org/explorer',
-         blockscout);
 }
 
+// this is used for console color output
 const chalk = require('chalk');
 const magenta = function () { console.log(chalk.magenta(...arguments)) };
 const cyan = function () { console.log(chalk.cyan(...arguments)) };
@@ -125,4 +139,5 @@ const yellow = function () { console.log(chalk.yellow(...arguments)) };
 const red = function () { console.log(chalk.red(...arguments)) };
 const blue = function () { console.log(chalk.blue(...arguments)) };
 const green = function () { console.log(chalk.green(...arguments)) };
+
 main();
